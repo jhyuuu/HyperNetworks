@@ -8,8 +8,14 @@ import torch.nn as nn
 import argparse
 
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 
 from primary_net import PrimaryNetwork
+from utils import get_time
+
+
+tb_path = 'run0' + get_time()
+writer = SummaryWriter(tb_path)
 
 ########### Data Loader ###############
 
@@ -25,12 +31,12 @@ transform_test = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-trainset = torchvision.datasets.CIFAR10(root='../data', train=True,
+trainset = torchvision.datasets.CIFAR10(root='../../datasets/cifar10', train=True,
                                         download=True, transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=128,
                                           shuffle=True, num_workers=4)
 
-testset = torchvision.datasets.CIFAR10(root='../data', train=False,
+testset = torchvision.datasets.CIFAR10(root='../../datasets/cifar10', train=False,
                                        download=True, transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=128,
                                          shuffle=False, num_workers=4)
@@ -73,42 +79,61 @@ print_freq = 50
 while total_iter < max_iter:
 
     running_loss = 0.0
-
+    running_acc = 0.
+    correct = 0.
+    total = 0.
+    iter = 0
     for i, data in enumerate(trainloader, 0):
 
         inputs, labels = data
-
         inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
-
+        
         optimizer.zero_grad()
-
         outputs = net(inputs)
+
+        _, predicted = torch.max(outputs.cpu().data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
+        # accuracy = (100. * correct) / total
+
         loss = criterion(outputs, labels)
         loss.backward()
 
         optimizer.step()
         lr_scheduler.step()
 
-        running_loss += loss.data[0]
-        if i % print_freq == (print_freq-1):
-            print("[Epoch %d, Total Iterations %6d] Loss: %.4f" % (epochs + 1, total_iter + 1, running_loss/print_freq))
-            running_loss = 0.0
+        # running_loss += loss.data[0]
+        running_loss += loss.item()
+        # if i % print_freq == (print_freq-1):
+        #     print("[Epoch %d, Total Iterations %6d] Loss: %.4f Acc: %.2f%%" % (epochs + 1, total_iter + 1, running_loss/print_freq,accuracy))
+        #     running_loss = 0.0
 
         total_iter += 1
-
+        iter += 1
+    
+    TrainLoss = running_loss/iter
+    TrainAcc = (100. * correct) / total
+    # print("[Epoch %d] Loss: %.4f Acc: %.2f%%" % (epochs,TrainLoss,TrainAcc))
     epochs += 1
-
+    
     correct = 0.
     total = 0.
+    t_running_loss = 0.
+    iter = 0
     for tdata in testloader:
         timages, tlabels = tdata
         toutputs = net(Variable(timages.cuda()))
+        tloss = criterion(toutputs, tlabels)
+        t_running_loss += tloss.item()
         _, predicted = torch.max(toutputs.cpu().data, 1)
         total += tlabels.size(0)
         correct += (predicted == tlabels).sum()
+        iter += 1
 
     accuracy = (100. * correct) / total
-    print('After epoch %d, accuracy: %.4f %%' % (epochs, accuracy))
+    TestLoss = t_running_loss/iter
+    TestAcc = accuracy
+    # print('After epoch %d, accuracy: %.4f %%' % (epochs, accuracy))
 
     if accuracy > best_accuracy:
         print('Saving model...')
@@ -118,5 +143,9 @@ while total_iter < max_iter:
         }
         torch.save(state, './hypernetworks_cifar_paper.pth')
         best_accuracy = accuracy
+    
+    print("[Epoch %d] TrainLoss: %.4f| TestLoss: %.4f| TrainAcc: %.2f%%| TestAcc: %.2f%% "  % (epochs,TrainLoss,TestLoss,TrainAcc,TestAcc))
+    writer.add_scalars('Loss',{'train_loss':TrainLoss,'eval_loss':TestLoss},epochs)
+    writer.add_scalars('Score',{'train_score':TrainAcc,'eval_score':TestAcc},epochs)
 
 print('Finished Training')
