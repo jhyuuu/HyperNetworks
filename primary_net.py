@@ -72,6 +72,14 @@ class PrimaryNetwork(nn.Module):
 
         for i in range(18):
             # if i != 15 and i != 17:
+            # 36个embedding网，1个超网
+            # 对于36个不同的z_list，1个参数生成网络
+            # 其中所有参数都是通过torch.randn生成，然后通过torch.fmod转换为二值
+
+            # embedding网，控制参数shape，首先生成 z_list ,即 z_num * z_num 个长度为 z_dim 的0-1Tensor，然后将z_list交给超网
+            # 超网用来生成参数，对于每一个长为 z_dim 的Tensor，将其转换为[16,16,3,3]的参数组，其中转换的矩阵参数也是0-1Tensor
+            # 然后enbedding网在 dim=1 维度上进行concat，形成一个Conv2D的参数
+
             w1 = self.zs[2*i](self.hope)
             w2 = self.zs[2*i+1](self.hope)
             x = self.res_net[i](x, w1, w2)
